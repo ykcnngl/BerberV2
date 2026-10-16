@@ -4,7 +4,7 @@ import { getErrorMessage } from "../api";
 import { DAYS, dayLabel, formatPhoneNumber } from "../utils";
 import EmployeeSchedule from "./EmployeeSchedule";
 
-const emptyForm = { firstName: "", lastName: "", phone: "", serviceIds: [], weeklyOffDays: [] };
+const emptyForm = { firstName: "", lastName: "", phone: "", serviceIds: [], weeklyOffDays: [], commissionRate: "" };
 
 const inputClass =
   "w-full bg-neutral-900 border border-neutral-600 rounded-lg p-3 text-white focus:outline-none focus:border-emerald-500";
@@ -51,6 +51,19 @@ function EmployeeForm({ initial, services, onSubmit, onCancel }) {
         onChange={(e) => setForm({ ...form, phone: formatPhoneNumber(e.target.value) })}
         className={inputClass}
       />
+      <label className="block text-sm text-neutral-400">
+        Prim oranı (%) <span className="text-neutral-500">— yaptığı hizmetlerin cirosundan; boş = prim yok</span>
+        <input
+          type="number"
+          min={0}
+          max={100}
+          step="any"
+          placeholder="örn. 40"
+          value={form.commissionRate}
+          onChange={(e) => setForm({ ...form, commissionRate: e.target.value })}
+          className={`${inputClass} mt-1`}
+        />
+      </label>
 
       <div>
         <p className="text-sm font-medium text-neutral-300 mb-2">Verdiği hizmetler</p>
@@ -184,6 +197,7 @@ function EmployeesPanel({ adminApi, employees, services, onChanged }) {
               phone: emp.phone ? formatPhoneNumber(emp.phone) : "",
               serviceIds: emp.serviceIds,
               weeklyOffDays: emp.weeklyOffDays,
+              commissionRate: emp.commissionRate ? String(emp.commissionRate) : "",
             }}
             services={services}
             onSubmit={(form) => handleSave(emp.id, form)}
@@ -202,7 +216,13 @@ function EmployeesPanel({ adminApi, employees, services, onChanged }) {
                     <span className="ml-2 text-[0.65rem] bg-neutral-700 text-neutral-300 px-1.5 py-0.5 rounded-full">Pasif</span>
                   )}
                 </h3>
-                {emp.phone && <p className="text-xs text-neutral-500 mt-0.5">{formatPhoneNumber(emp.phone)}</p>}
+                {(emp.phone || emp.commissionRate > 0) && (
+                  <p className="text-xs text-neutral-500 mt-0.5">
+                    {[emp.phone && formatPhoneNumber(emp.phone), emp.commissionRate > 0 && `%${emp.commissionRate} prim`]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                )}
                 <p className="text-xs text-neutral-400 flex items-center gap-1 mt-1 truncate">
                   <Scissors size={12} className="shrink-0" /> {emp.serviceIds.map(serviceName).join(", ") || "Hizmet yok"}
                 </p>

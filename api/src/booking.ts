@@ -32,6 +32,7 @@ export interface EmployeeRow {
   phone: string | null;
   is_active: number;
   weekly_off_days: string;
+  commission_rate: number | null;
 }
 
 export interface ServiceRow {
@@ -60,6 +61,7 @@ export interface Employee {
   active: boolean;
   serviceIds: string[];
   weeklyOffDays: DayOfWeek[];
+  commissionRate: number; // hizmet cirosundan prim yüzdesi (0 = prim yok)
 }
 
 export async function loadEmployees(env: Env, id?: string): Promise<Employee[]> {
@@ -80,6 +82,7 @@ export async function loadEmployees(env: Env, id?: string): Promise<Employee[]> 
       .filter((l) => l.employee_id === e.id)
       .map((l) => l.service_id),
     weeklyOffDays: sortDays(JSON.parse(e.weekly_off_days)),
+    commissionRate: e.commission_rate ?? 0,
   }));
 }
 
@@ -136,10 +139,21 @@ export function priceToCents(value: unknown): number | null {
   return typeof n === "number" && Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
 }
 
+// "2,5" / 2.5 -> 2.5 (yüzde, 0-100); boş = 0
+export function parseRate(value: unknown, label: string): number {
+  if (value === null || value === undefined || value === "") return 0;
+  const n = typeof value === "string" ? Number(value.replace(",", ".")) : value;
+  if (typeof n !== "number" || !Number.isFinite(n) || n < 0 || n > 100) {
+    throw new BusinessError(`${label} 0 ile 100 arasında olmalıdır.`);
+  }
+  return Math.round(n * 100) / 100;
+}
+
 // --- Randevu verisi ---
 
 const APPOINTMENT_SELECT = `
   SELECT a.id, a.start_time, a.end_time, a.status, a.price_cents, a.list_price_cents, a.price_note, a.package_name,
+         a.payment_method,
          c.full_name AS customer_full_name, c.phone AS customer_phone,
          e.id AS employee_id, e.first_name || ' ' || e.last_name AS employee_name
   FROM appointments a
@@ -160,6 +174,7 @@ export interface AppointmentRow {
   list_price_cents: number | null;
   price_note: string | null;
   package_name: string | null;
+  payment_method: "CASH" | "CARD" | "TRANSFER" | null;
   customer_full_name: string;
   customer_phone: string;
   employee_id: string;
@@ -197,12 +212,13 @@ export const toAppointmentResponse = (a: AppointmentRow) => ({
   packageName: a.package_name,
 });
 
-// Yöneticiye dönülen randevu: tahsil edilen fiyat, liste fiyatı ve indirim notu dahil
+// Yöneticiye dönülen randevu: tahsil edilen fiyat, liste fiyatı, indirim notu ve ödeme yöntemi dahil
 export const toAdminAppointmentResponse = (a: AppointmentRow) => ({
   ...toAppointmentResponse(a),
   price: centsToPrice(a.price_cents),
   listPrice: centsToPrice(a.list_price_cents),
   priceNote: a.price_note,
+  paymentMethod: a.payment_method,
 });
 
 // --- Müşterinin seçimi: bir veya birkaç hizmet ya da bir paket ---
@@ -499,7 +515,7 @@ export async function getEmployeeAppointments(env: Env, employeeId: string, date
   return rows.map(toAdminAppointmentResponse);
 }
 
-async function findAppointment(env: Env, id: string): Promise<AppointmentRow> {
+export async function findAppointment(env: Env, id: string): Promise<AppointmentRow> {
   const [appointment] = await queryAppointments(env, "WHERE a.id = ?", id);
   if (!appointment) throw new NotFound("Randevu bulunamadı.");
   return appointment;
@@ -568,6 +584,15 @@ const MAX_PRICE_NOTE = 120;
 // price boş gönderilirse liste fiyatına dönülür.
 export async function setAppointmentPrice(env: Env, appointmentId: string, price: unknown, note: unknown) {
   const appointment = await findAppointment(env, appointmentId);
+  const { price_cents, price_note } = parseAppointmentPrice(appointment, price, note);
+  await env.DB.prepare("UPDATE appointments SET price_cents = ?, price_note = ? WHERE id = ?")
+    .bind(price_cents, price_note, appointmentId)
+    .run();
+  return toAdminAppointmentResponse({ ...appointment, price_cents, price_note });
+}
+
+// Düzenlenen tutarı doğrular (ödeme anında indirimde de kullanılır). price boşsa liste fiyatına dönülür.
+export function parseAppointmentPrice(appointment: AppointmentRow, price: unknown, note: unknown) {
   if (appointment.status === "CANCELLED") {
     throw new BusinessError("İptal edilmiş randevunun fiyatı düzenlenemez.");
   }
@@ -580,8 +605,5 @@ export async function setAppointmentPrice(env: Env, appointmentId: string, price
   if (cleanNote && cleanNote.length > MAX_PRICE_NOTE) {
     throw new BusinessError(`Not en fazla ${MAX_PRICE_NOTE} karakter olabilir.`);
   }
-  await env.DB.prepare("UPDATE appointments SET price_cents = ?, price_note = ? WHERE id = ?")
-    .bind(cents, cleanNote, appointmentId)
-    .run();
-  return toAdminAppointmentResponse({ ...appointment, price_cents: cents, price_note: cleanNote });
+  return { price_cents: cents, price_note: cleanNote };
 }

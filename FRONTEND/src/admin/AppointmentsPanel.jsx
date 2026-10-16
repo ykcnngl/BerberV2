@@ -1,68 +1,124 @@
 import { useEffect, useState } from "react";
-import { Calendar, Pencil, Phone, UserCircle } from "lucide-react";
+import { Calendar, Pencil, Phone, UserCircle, Wallet } from "lucide-react";
 import { getErrorMessage } from "../api";
-import { formatMoney, formatPhoneNumber, getLocalDateStr } from "../utils";
+import { PAYMENT_METHODS, formatMoney, formatPhoneNumber, getLocalDateStr, paymentLabel } from "../utils";
 
 const inputClass =
   "bg-neutral-900 border border-neutral-600 rounded-lg p-2 text-white text-sm focus:outline-none focus:border-emerald-500";
 
-// Tahsil edilen tutar; indirim yapıldıysa liste fiyatı üstü çizili gösterilir. Kesimden sonra düzenlenebilir.
-function PriceRow({ app, adminApi, onSaved }) {
+const chip = (active) =>
+  `px-2 py-1 rounded-md border transition-colors ${
+    active ? "bg-emerald-600 border-emerald-500 text-white" : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:text-white"
+  }`;
+
+const DISCOUNTS = [10, 15, 20];
+
+// Ödeme: kesimden sonra müşteriden alınan tutar ve yöntemi tek adımda girilir. Ödeme anında indirim yapılabilir
+// (hazır yüzde ya da elle tutar); indirim yapıldıysa liste fiyatı üstü çizili gösterilir.
+// Gün sonu kasa, POS komisyonu ve ciro bu bilgilerle hesaplanır.
+function CheckoutRow({ app, adminApi, onSaved }) {
   const [editing, setEditing] = useState(false);
   const [price, setPrice] = useState("");
   const [note, setNote] = useState("");
+  const [method, setMethod] = useState(null);
   const [saving, setSaving] = useState(false);
   const discounted = app.price != null && app.listPrice != null && app.price !== app.listPrice;
+  const canPay = app.status === "CONFIRMED";
 
-  const startEditing = () => {
+  const start = () => {
     setPrice(app.price == null ? "" : String(app.price));
     setNote(app.priceNote || "");
+    setMethod(app.paymentMethod);
     setEditing(true);
   };
 
   const save = async (body) => {
     setSaving(true);
     try {
-      const response = await adminApi.patch(`/appointments/${app.id}/price`, body);
+      const response = await adminApi.patch(`/appointments/${app.id}/payment`, body);
       onSaved(response.data);
       setEditing(false);
     } catch (error) {
-      alert(getErrorMessage(error, "Fiyat kaydedilemedi."));
+      alert(getErrorMessage(error, "Ödeme kaydedilemedi."));
     }
     setSaving(false);
   };
 
   if (editing) {
+    const atListPrice = app.listPrice != null && Number(price) === app.listPrice;
     return (
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          save({ price, note });
+          // Liste fiyatında ve notsuz: indirim kaydı tutulmaz
+          save({ method, price: atListPrice && !note.trim() ? null : price, note });
         }}
-        className="flex flex-wrap items-center gap-2 bg-neutral-800 rounded-lg p-3"
+        className="space-y-2.5 bg-neutral-900 border border-neutral-700 rounded-lg p-3"
       >
-        <label className="text-sm text-neutral-300 flex items-center gap-2">
-          Tutar (₺)
-          <input type="number" min={0} step="any" value={price} onChange={(e) => setPrice(e.target.value)} className={`${inputClass} w-28`} autoFocus />
-        </label>
-        <input
-          placeholder="Not (örn. öğrenci indirimi)"
-          value={note}
-          maxLength={120}
-          onChange={(e) => setNote(e.target.value)}
-          className={`${inputClass} flex-1 min-w-40`}
-        />
-        <div className="flex gap-2 ml-auto">
-          {discounted && (
-            <button type="button" disabled={saving} onClick={() => save({ price: null })} className="text-xs text-neutral-400 hover:text-white underline">
-              Liste fiyatına dön ({formatMoney(app.listPrice)})
+        {app.listPrice != null && (
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="text-neutral-400 mr-1">İndirim:</span>
+            <button
+              type="button"
+              onClick={() => setPrice(String(app.listPrice))}
+              className={chip(atListPrice)}
+            >
+              Yok ({formatMoney(app.listPrice)})
+            </button>
+            {DISCOUNTS.map((d) => {
+              const value = Math.round(app.listPrice * (1 - d / 100));
+              return (
+                <button key={d} type="button" onClick={() => setPrice(String(value))} className={chip(Number(price) === value)}>
+                  %{d} → {formatMoney(value)}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-sm text-neutral-300 flex items-center gap-2">
+            Alınan (₺)
+            <input type="number" min={0} step="any" value={price} onChange={(e) => setPrice(e.target.value)} className={`${inputClass} w-28`} />
+          </label>
+          <input
+            placeholder="Not (örn. öğrenci indirimi)"
+            value={note}
+            maxLength={120}
+            onChange={(e) => setNote(e.target.value)}
+            className={`${inputClass} flex-1 min-w-40`}
+          />
+        </div>
+        {canPay && (
+          <div className="grid grid-cols-3 gap-1.5">
+            {PAYMENT_METHODS.map(({ value, label }) => (
+              <button key={value} type="button" onClick={() => setMethod(value)} className={`py-2 rounded-lg text-sm font-medium border ${
+                method === value ? "bg-emerald-600 border-emerald-500 text-white" : "bg-neutral-800 border-neutral-700 text-neutral-300"
+              }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          {canPay && app.paymentMethod && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => save({ method: null })}
+              className="mr-auto text-xs text-neutral-400 hover:text-red-400 underline"
+            >
+              Ödemeyi kaldır
             </button>
           )}
           <button type="button" onClick={() => setEditing(false)} className="text-sm px-3 py-1.5 text-neutral-400 hover:text-white">
             Vazgeç
           </button>
-          <button type="submit" disabled={saving || price === ""} className="text-sm bg-emerald-600 hover:bg-emerald-500 disabled:bg-neutral-700 text-white px-3 py-1.5 rounded-lg">
-            {saving ? "Kaydediliyor..." : "Kaydet"}
+          <button
+            type="submit"
+            disabled={saving || price === "" || (canPay && !method)}
+            className="text-sm bg-emerald-600 hover:bg-emerald-500 disabled:bg-neutral-700 disabled:text-neutral-400 text-white px-4 py-1.5 rounded-lg"
+          >
+            {saving ? "Kaydediliyor..." : canPay && !method ? "Ödeme yöntemi seçin" : "Kaydet"}
           </button>
         </div>
       </form>
@@ -79,10 +135,22 @@ function PriceRow({ app, adminApi, onSaved }) {
       )}
       {discounted && <span className="text-neutral-500 line-through">{formatMoney(app.listPrice)}</span>}
       {app.priceNote && <span className="text-neutral-400">· {app.priceNote}</span>}
-      {app.status !== "CANCELLED" && (
-        <button onClick={startEditing} className="ml-auto text-xs text-neutral-400 hover:text-white flex items-center gap-1">
-          <Pencil size={12} /> Fiyatı düzenle
-        </button>
+      {canPay &&
+        (app.paymentMethod ? (
+          <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">{paymentLabel(app.paymentMethod)}</span>
+        ) : (
+          <span className="text-xs text-amber-400">· ödeme alınmadı</span>
+        ))}
+      {app.status !== "CANCELLED" && app.status !== "NO_SHOW" && (
+        app.paymentMethod || !canPay ? (
+          <button onClick={start} className="ml-auto text-xs text-neutral-400 hover:text-white flex items-center gap-1">
+            <Pencil size={12} /> Düzenle
+          </button>
+        ) : (
+          <button onClick={start} className="ml-auto text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-md flex items-center gap-1">
+            <Wallet size={12} /> Ödeme Al
+          </button>
+        )
       )}
     </div>
   );
@@ -216,7 +284,7 @@ function AppointmentsPanel({ adminApi, employees }) {
                   {formatPhoneNumber(app.customerPhone)}
                 </a>
               </div>
-              <PriceRow
+              <CheckoutRow
                 app={app}
                 adminApi={adminApi}
                 onSaved={(updated) => setAppointments((list) => list.map((a) => (a.id === updated.id ? updated : a)))}

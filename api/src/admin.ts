@@ -1,34 +1,21 @@
-// Yönetici paneli: çalışan/hizmet yönetimi, mola ve izin tanımlama, ciro raporu
+// Yönetici paneli: çalışan/hizmet yönetimi, mola ve izin tanımlama (rapor: report.ts)
 import type { Env } from "./env";
 import { BadRequest, BusinessError, NotFound } from "./errors";
 import { normalizePhone } from "./phone";
-import { generateRecurringExpenses, totalExpensesCents } from "./expenses";
+
 import {
-  type AppointmentLine,
   type Employee,
   type ServiceRow,
   centsToPrice,
+  parseRate,
   priceToCents,
   sameName,
   findEmployee,
   findService,
-  fullName,
   loadEmployees,
-  queryAppointments,
   trCollator,
 } from "./booking";
-import {
-  daysBetween,
-  endOfDay,
-  nowLocal,
-  parseDate,
-  parseDayOfWeek,
-  parseOptionalDate,
-  parseTime,
-  plusDays,
-  startOfDay,
-  todayLocal,
-} from "./time";
+import { endOfDay, parseDayOfWeek, parseOptionalDate, parseTime, startOfDay, todayLocal } from "./time";
 
 const trim = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 const trimToNull = (value: unknown) => trim(value) || null;
@@ -44,6 +31,7 @@ const toAdminEmployee = (e: Employee) => ({
   active: e.active,
   serviceIds: e.serviceIds,
   weeklyOffDays: e.weeklyOffDays,
+  commissionRate: e.commissionRate,
 });
 
 export async function listEmployees(env: Env) {
@@ -58,6 +46,7 @@ interface EmployeeRequest {
   phone?: unknown;
   serviceIds?: unknown;
   weeklyOffDays?: unknown;
+  commissionRate?: unknown;
 }
 
 export async function saveEmployee(env: Env, id: string | null, request: EmployeeRequest) {
@@ -83,15 +72,18 @@ export async function saveEmployee(env: Env, id: string | null, request: Employe
   if (request.weeklyOffDays != null && !Array.isArray(request.weeklyOffDays)) throw new BadRequest();
   const offDays = [...new Set(((request.weeklyOffDays as unknown[]) ?? []).map(parseDayOfWeek))];
   const phone = trim(request.phone) ? normalizePhone(request.phone) : null;
+  const commissionRate = parseRate(request.commissionRate, "Prim oranı");
 
   const employeeId = id ?? crypto.randomUUID();
   await env.DB.batch([
     id
-      ? env.DB.prepare("UPDATE employees SET first_name = ?, last_name = ?, phone = ?, weekly_off_days = ? WHERE id = ?").bind(
-          firstName, lastName, phone, JSON.stringify(offDays), id)
+      ? env.DB.prepare(
+          "UPDATE employees SET first_name = ?, last_name = ?, phone = ?, weekly_off_days = ?, commission_rate = ? WHERE id = ?",
+        ).bind(firstName, lastName, phone, JSON.stringify(offDays), commissionRate, id)
       : env.DB.prepare(
-          "INSERT INTO employees (id, first_name, last_name, phone, role, is_active, weekly_off_days) VALUES (?, ?, ?, ?, 'STAFF', 1, ?)",
-        ).bind(employeeId, firstName, lastName, phone, JSON.stringify(offDays)),
+          `INSERT INTO employees (id, first_name, last_name, phone, role, is_active, weekly_off_days, commission_rate)
+           VALUES (?, ?, ?, ?, 'STAFF', 1, ?, ?)`,
+        ).bind(employeeId, firstName, lastName, phone, JSON.stringify(offDays), commissionRate),
     env.DB.prepare("DELETE FROM employee_services WHERE employee_id = ?").bind(employeeId),
     ...serviceIds.map((serviceId) =>
       env.DB.prepare("INSERT INTO employee_services (employee_id, service_id) VALUES (?, ?)").bind(employeeId, serviceId),
@@ -321,113 +313,3 @@ export async function deleteLeave(env: Env, leaveId: string) {
   if (result.meta.changes === 0) throw new NotFound("İzin bulunamadı.");
 }
 
-// --- RAPOR ---
-// Seçilen tarih aralığında yapılan (saati geçmiş, iptal edilmemiş, "gelmedi" olmayan) işlemler.
-// "total" tüm salonu, "employees" her çalışanı ayrı ayrı verir. Ciro, yöneticinin düzenlediği (indirimli)
-// tutarlarla hesaplanır; giderler ve net kâr yalnızca tüm salon için verilir.
-const MAX_REPORT_DAYS = 366;
-
-interface ReportAppointment {
-  employeeId: string;
-  packageName: string | null;
-  noShow: boolean;
-  priceCents: number;
-  // Randevu tutarının hizmetlere dağılımı (liste fiyatları oranında)
-  services: { name: string; cents: number }[];
-}
-
-// Tahsil edilen tutarı hizmetlere liste fiyatları oranında böler (fiyat yoksa eşit); kuruş artığı son hizmete
-function splitByServices(totalCents: number, lines: AppointmentLine[]) {
-  const weights = lines.map((l) => l.price_cents ?? 0);
-  const weightSum = weights.reduce((a, b) => a + b, 0);
-  let given = 0;
-  return lines.map((l, i) => {
-    const cents = i === lines.length - 1
-      ? totalCents - given
-      : Math.round(weightSum > 0 ? (totalCents * weights[i]) / weightSum : totalCents / lines.length);
-    given += cents;
-    return { name: l.service_name, cents };
-  });
-}
-
-function group(items: { name: string; cents: number }[]) {
-  const map = new Map<string, { count: number; cents: number }>();
-  for (const item of items) {
-    const g = map.get(item.name) ?? { count: 0, cents: 0 };
-    g.count++;
-    g.cents += item.cents;
-    map.set(item.name, g);
-  }
-  return [...map].sort((a, b) => b[1].count - a[1].count || trCollator.compare(a[0], b[0]));
-}
-
-function stats(appointments: ReportAppointment[]) {
-  const done = appointments.filter((a) => !a.noShow);
-  return {
-    count: done.length,
-    revenue: done.reduce((sum, a) => sum + a.priceCents, 0) / 100,
-    noShowCount: appointments.length - done.length,
-    services: group(done.flatMap((a) => a.services)).map(([serviceName, g]) => ({
-      serviceName,
-      count: g.count,
-      revenue: g.cents / 100,
-    })),
-    packages: group(done.filter((a) => a.packageName).map((a) => ({ name: a.packageName!, cents: a.priceCents }))).map(
-      ([packageName, g]) => ({ packageName, count: g.count, revenue: g.cents / 100 }),
-    ),
-  };
-}
-
-export async function getReport(env: Env, fromParam: unknown, toParam: unknown) {
-  const from = parseDate(fromParam);
-  const to = parseDate(toParam);
-  if (to < from) {
-    throw new BusinessError("Bitiş tarihi başlangıç tarihinden önce olamaz.");
-  }
-  if (daysBetween(from, to) >= MAX_REPORT_DAYS) {
-    throw new BusinessError("En fazla 1 yıllık rapor alınabilir.");
-  }
-  await generateRecurringExpenses(env);
-  // Saati gelmemiş randevular henüz yapılmadığı için rapora girmez
-  const [rows, expenseCents] = await Promise.all([
-    queryAppointments(
-      env,
-      "WHERE a.start_time >= ? AND a.start_time < ? AND a.start_time < ? AND a.status <> 'CANCELLED'",
-      startOfDay(from),
-      startOfDay(plusDays(to, 1)),
-      nowLocal(),
-    ),
-    totalExpensesCents(env, from, to),
-  ]);
-  const past: ReportAppointment[] = rows.map((a) => {
-    // Fiyat kaydı olmayan randevularda hizmet fiyatlarının toplamı kullanılır
-    const priceCents = a.price_cents ?? a.lines.reduce((sum, l) => sum + (l.price_cents ?? 0), 0);
-    return {
-      employeeId: a.employee_id,
-      packageName: a.package_name,
-      noShow: a.status === "NO_SHOW",
-      priceCents,
-      services: splitByServices(priceCents, a.lines),
-    };
-  });
-
-  // Aktif çalışanların hepsi listelenir (işlemi olmayan sıfır görünür); pasif çalışan yalnızca işlemi varsa
-  const employees = (await loadEmployees(env))
-    .map((e) => ({
-      employeeId: e.id,
-      employeeName: fullName(e),
-      stats: stats(past.filter((a) => a.employeeId === e.id)),
-      active: e.active,
-    }))
-    .filter((e) => e.active || e.stats.count + e.stats.noShowCount > 0);
-
-  const total = stats(past);
-  return {
-    from,
-    to,
-    total,
-    employees,
-    expenses: expenseCents / 100,
-    net: (Math.round(total.revenue * 100) - expenseCents) / 100,
-  };
-}

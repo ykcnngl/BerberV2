@@ -8,6 +8,8 @@ import * as admin from "./admin";
 import * as gallery from "./gallery";
 import * as packages from "./packages";
 import * as expenses from "./expenses";
+import * as report from "./report";
+import * as sales from "./sales";
 import { getVerifiedPhone, requestCode, verifyAdminPassword, verifyCode } from "./verification";
 import { parseDate } from "./time";
 
@@ -131,8 +133,37 @@ app.patch("/admin/appointments/:id/price", async (c) => {
   return c.json(await booking.setAppointmentPrice(c.env, c.req.param("id"), body.price, body.note));
 });
 
-// Rapor (ciro, çalışan ve hizmet bazında işlem sayıları, giderler)
-app.get("/admin/report", async (c) => c.json(await admin.getReport(c.env, c.req.query("from"), c.req.query("to"))));
+// Ödeme al: yöntem (CASH | CARD | TRANSFER; boş = kaydı sil), isteğe bağlı indirimli tutar ve not
+app.patch("/admin/appointments/:id/payment", async (c) => {
+  const body = await jsonBody(c);
+  return c.json(await sales.setAppointmentPayment(c.env, c.req.param("id"), body));
+});
+
+// Rapor (gelir, ödeme yöntemleri, çalışan hakedişleri, giderler, net kâr) ve Excel (CSV) dışa aktarma
+app.get("/admin/report", async (c) => c.json(await report.getReport(c.env, c.req.query("from"), c.req.query("to"))));
+app.get("/admin/report/export", (c) => report.exportCsv(c.env, c.req.query("from"), c.req.query("to")));
+
+// Kasa: randevusuz satış (hizmet ve/veya ürün)
+app.get("/admin/sales", async (c) => c.json(await sales.listSales(c.env, parseDate(requiredQuery(c, "date")))));
+app.post("/admin/sales", async (c) => c.json(await sales.createSale(c.env, await jsonBody(c))));
+app.delete("/admin/sales/:id", async (c) => {
+  await sales.deleteSale(c.env, c.req.param("id"));
+  return c.json(message("Satış silindi. Ürünler stoğa geri eklendi."));
+});
+
+// Ürünler ve stok
+app.get("/admin/products", async (c) => c.json(await sales.listProducts(c.env)));
+app.post("/admin/products", async (c) => c.json(await sales.saveProduct(c.env, null, await jsonBody(c))));
+app.put("/admin/products/:id", async (c) => c.json(await sales.saveProduct(c.env, c.req.param("id"), await jsonBody(c))));
+app.patch("/admin/products/:id/active", async (c) => {
+  const body = await jsonBody(c);
+  return c.json(await sales.setProductActive(c.env, c.req.param("id"), body.active === true));
+});
+app.post("/admin/products/:id/stock", async (c) => c.json(await sales.addStock(c.env, c.req.param("id"), await jsonBody(c))));
+
+// Ayarlar (POS komisyon oranı)
+app.get("/admin/settings", async (c) => c.json(await sales.getSettings(c.env)));
+app.put("/admin/settings", async (c) => c.json(await sales.saveSettings(c.env, await jsonBody(c))));
 
 // Çalışanlar
 app.get("/admin/employees", async (c) => c.json(await admin.listEmployees(c.env)));

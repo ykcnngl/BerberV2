@@ -1,14 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
-import { BarChart3, CalendarDays, Images, Lock, LogOut, Package, Scissors, ShieldCheck, Users } from "lucide-react";
+import {
+  BarChart3,
+  CalendarDays,
+  Images,
+  Lock,
+  LogOut,
+  Package,
+  Scissors,
+  ShieldCheck,
+  ShoppingBag,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { API_URL, getErrorMessage } from "../api";
 import siteConfig from "../siteConfig";
 import AppointmentsPanel from "../admin/AppointmentsPanel";
 import EmployeesPanel from "../admin/EmployeesPanel";
 import GalleryPanel from "../admin/GalleryPanel";
 import PackagesPanel from "../admin/PackagesPanel";
+import ProductsPanel from "../admin/ProductsPanel";
 import ReportPanel from "../admin/ReportPanel";
+import SalesPanel from "../admin/SalesPanel";
 import ServicesPanel from "../admin/ServicesPanel";
 
 // Yönetici paneli (/yonetim). Şifre sadece bellekte tutulur; sayfa yenilenince tekrar giriş istenir.
@@ -110,13 +124,15 @@ function AdminPage() {
     );
   }
 
-  // Menü: telefonda 3'erli iki satır, geniş ekranda tek satır; yana taşmaz
+  // Menü: telefonda 4'erli iki satır, geniş ekranda tek satır; yana taşmaz
   const tabs = [
     { id: "appointments", label: "Randevular", icon: CalendarDays },
+    { id: "sales", label: "Kasa", icon: Wallet },
     { id: "report", label: "Rapor", icon: BarChart3 },
     { id: "employees", label: "Çalışanlar", icon: Users },
     { id: "services", label: "Hizmetler", icon: Scissors },
     { id: "packages", label: "Paketler", icon: Package },
+    { id: "products", label: "Ürünler", icon: ShoppingBag },
     { id: "gallery", label: "Galeri", icon: Images },
   ];
 
@@ -135,7 +151,7 @@ function AdminPage() {
           </button>
         </header>
 
-        <nav className="mx-4 grid grid-cols-3 sm:grid-cols-6 gap-1 bg-neutral-800 p-1 rounded-xl border border-neutral-700">
+        <nav className="mx-4 grid grid-cols-4 sm:grid-cols-8 gap-1 bg-neutral-800 p-1 rounded-xl border border-neutral-700">
           {tabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -152,7 +168,8 @@ function AdminPage() {
         {/* Sekme içeriği ekranın kalanını kullanır; uzun listeler yalnızca bu alanın içinde kayar */}
         <main className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {activeTab === "appointments" && <AppointmentsPanel adminApi={adminApi} employees={employees} />}
-        {activeTab === "report" && <ReportPanel adminApi={adminApi} />}
+        {activeTab === "sales" && <SalesPanel adminApi={adminApi} employees={employees} services={services} />}
+        {activeTab === "report" && <ReportPanel adminApi={adminApi} employees={employees} />}
         {activeTab === "employees" && (
           <EmployeesPanel
             adminApi={adminApi}
@@ -170,6 +187,7 @@ function AdminPage() {
           />
         )}
         {activeTab === "packages" && <PackagesPanel adminApi={adminApi} services={services} employees={employees} />}
+        {activeTab === "products" && <ProductsPanel adminApi={adminApi} />}
         {activeTab === "gallery" && <GalleryPanel adminApi={adminApi} />}
         </main>
       </div>

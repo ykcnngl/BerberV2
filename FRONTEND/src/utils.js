@@ -44,3 +44,25 @@ export const formatMoney = (value) =>
 // "2026-10-13" -> "13.10.2026"
 export const formatDate = (dateStr) => dateStr.split("-").reverse().join(".");
 
+// Ödeme yöntemleri (backend: CASH, CARD, TRANSFER)
+export const PAYMENT_METHODS = [
+  { value: "CASH", label: "Nakit" },
+  { value: "CARD", label: "Kart" },
+  { value: "TRANSFER", label: "IBAN" },
+];
+
+export const paymentLabel = (value) => PAYMENT_METHODS.find((p) => p.value === value)?.label || "Belirtilmemiş";
+
+// Gider kategorileri (backend: expenses.ts CATEGORIES ile aynı)
+export const EXPENSE_CATEGORIES = [
+  { value: "RENT", label: "Kira / Aidat" },
+  { value: "BILLS", label: "Faturalar" },
+  { value: "SUPPLIES", label: "Malzeme" },
+  { value: "PRODUCT", label: "Ürün alımı" },
+  { value: "SALARY", label: "Maaş / Personel" },
+  { value: "TAX", label: "Vergi / SGK" },
+  { value: "OTHER", label: "Diğer" },
+];
+
+export const categoryLabel = (value) => EXPENSE_CATEGORIES.find((c) => c.value === value)?.label || "Diğer";
+

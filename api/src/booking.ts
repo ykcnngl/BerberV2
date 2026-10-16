@@ -23,6 +23,9 @@ const SLOT_STEP_MINUTES = 30;
 const CUSTOMER_HISTORY_DAYS = 7;
 const MAX_SERVICES_PER_APPOINTMENT = 6;
 
+// Saati dolu tutan randevular: iptal edilen ve "gelmedi" işaretlenen randevuların saati yeniden alınabilir
+export const OCCUPIES_SLOT = "status NOT IN ('CANCELLED', 'NO_SHOW')";
+
 // --- Ortak kayıt tipleri ve sorgular ---
 
 export interface EmployeeRow {
@@ -352,7 +355,7 @@ async function applicableBreaks(env: Env, employeeId: string, date: string): Pro
 async function activeAppointmentsOn(env: Env, employeeId: string, date: string) {
   const { results } = await env.DB.prepare(
     `SELECT start_time, end_time FROM appointments
-     WHERE employee_id = ? AND status <> 'CANCELLED' AND start_time BETWEEN ? AND ?`,
+     WHERE employee_id = ? AND ${OCCUPIES_SLOT} AND start_time BETWEEN ? AND ?`,
   )
     .bind(employeeId, startOfDay(date), endOfDay(date))
     .all<{ start_time: string; end_time: string }>();
@@ -458,7 +461,7 @@ export async function createAppointment(env: Env, ctx: WaitUntil, request: Appoi
   // Çakışma kontrolü ve kayıt tek işlemde (batch = transaction): aynı saate aynı anda gelen iki istekten
   // yalnızca biri kaydedilir. Müşteri ilk randevusunda oluşturulur; varsa adı değiştirilmez.
   const noOverlap = `NOT EXISTS (SELECT 1 FROM appointments
-      WHERE employee_id = ? AND status <> 'CANCELLED' AND start_time < ? AND end_time > ?)`;
+      WHERE employee_id = ? AND ${OCCUPIES_SLOT} AND start_time < ? AND end_time > ?)`;
   const overlapParams = [employee.id, endTime, startTime];
   const appointmentId = crypto.randomUUID();
   const { services, pkg } = selection;
@@ -573,9 +576,21 @@ export async function setNoShow(env: Env, appointmentId: string, noShow: boolean
   if (appointment.start_time >= nowLocal()) {
     throw new BusinessError('Saati gelmemiş randevu "gelmedi" olarak işaretlenemez.');
   }
-  const status = noShow ? "NO_SHOW" : "CONFIRMED";
-  await env.DB.prepare("UPDATE appointments SET status = ? WHERE id = ?").bind(status, appointmentId).run();
-  return toAdminAppointmentResponse({ ...appointment, status });
+  if (noShow) {
+    await env.DB.prepare("UPDATE appointments SET status = 'NO_SHOW' WHERE id = ?").bind(appointmentId).run();
+    return toAdminAppointmentResponse({ ...appointment, status: "NO_SHOW" });
+  }
+  // Geri alma ("geldi"): "gelmedi" işaretlenince boşalan saate bu arada başka randevu alındıysa çakışma olmasın
+  const result = await env.DB.prepare(
+    `UPDATE appointments SET status = 'CONFIRMED' WHERE id = ? AND NOT EXISTS (
+       SELECT 1 FROM appointments WHERE employee_id = ? AND id <> ? AND ${OCCUPIES_SLOT} AND start_time < ? AND end_time > ?)`,
+  )
+    .bind(appointmentId, appointment.employee_id, appointmentId, appointment.end_time, appointment.start_time)
+    .run();
+  if (result.meta.changes === 0) {
+    throw new BusinessError("Bu saate başka bir randevu alınmış, geri alınamaz.");
+  }
+  return toAdminAppointmentResponse({ ...appointment, status: "CONFIRMED" });
 }
 
 const MAX_PRICE_NOTE = 120;

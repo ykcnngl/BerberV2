@@ -2,7 +2,6 @@
 import type { Env } from "./env";
 import { BadRequest, BusinessError, NotFound } from "./errors";
 import { normalizePhone } from "./phone";
-
 import {
   type Employee,
   type ServiceRow,
@@ -13,6 +12,7 @@ import {
   findEmployee,
   findService,
   loadEmployees,
+  OCCUPIES_SLOT,
   trCollator,
 } from "./booking";
 import { endOfDay, parseDayOfWeek, parseOptionalDate, parseTime, startOfDay, todayLocal } from "./time";
@@ -292,7 +292,7 @@ export async function addLeave(env: Env, employeeId: string, request: LeaveReque
   }
   // Müşterisi habersiz kalmasın: izin günlerindeki aktif randevular önce iptal edilmeli
   const conflicts = await env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM appointments WHERE employee_id = ? AND status <> 'CANCELLED' AND start_time BETWEEN ? AND ?",
+    `SELECT COUNT(*) AS n FROM appointments WHERE employee_id = ? AND ${OCCUPIES_SLOT} AND start_time BETWEEN ? AND ?`,
   )
     .bind(employeeId, startOfDay(start), endOfDay(end))
     .first<number>("n");

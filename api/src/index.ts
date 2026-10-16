@@ -140,8 +140,12 @@ app.patch("/admin/appointments/:id/payment", async (c) => {
 });
 
 // Rapor (gelir, ödeme yöntemleri, çalışan hakedişleri, giderler, net kâr) ve Excel (CSV) dışa aktarma
-app.get("/admin/report", async (c) => c.json(await report.getReport(c.env, c.req.query("from"), c.req.query("to"))));
-app.get("/admin/report/export", (c) => report.exportCsv(c.env, c.req.query("from"), c.req.query("to")));
+// ?fixed=0: sabit aylık giderler düşülmez (günlük/haftalık rapor)
+const includeFixed = (c: Context) => c.req.query("fixed") !== "0";
+app.get("/admin/report", async (c) =>
+  c.json(await report.getReport(c.env, c.req.query("from"), c.req.query("to"), includeFixed(c))),
+);
+app.get("/admin/report/export", (c) => report.exportCsv(c.env, c.req.query("from"), c.req.query("to"), includeFixed(c)));
 
 // Kasa: randevusuz satış (hizmet ve/veya ürün)
 app.get("/admin/sales", async (c) => c.json(await sales.listSales(c.env, parseDate(requiredQuery(c, "date")))));

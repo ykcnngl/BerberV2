@@ -66,3 +66,11 @@ export const EXPENSE_CATEGORIES = [
 
 export const categoryLabel = (value) => EXPENSE_CATEGORIES.find((c) => c.value === value)?.label || "Diğer";
 
+
+// Sabit aylık giderler (kira, maaş...) yalnızca aylık raporda düşülür: "Bu Ay" seçiliyse ya da elle seçilen
+// aralık 7 günden uzunsa. Bugün, Dün, Bu Hafta ve kısa aralıklarda düşülmez (ayın tek bir gününe yazıldıkları için).
+export const includesFixedExpenses = (preset, from, to) => {
+  if (preset) return preset === "Bu Ay";
+  const days = (new Date(to) - new Date(from)) / 86_400_000 + 1;
+  return days > 7;
+};

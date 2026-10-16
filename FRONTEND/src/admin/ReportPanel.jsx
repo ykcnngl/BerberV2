@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Calendar, Download, TriangleAlert } from "lucide-react";
 import { getErrorMessage } from "../api";
-import { formatDate, formatMoney, getLocalDateStr, toLocalDateStr } from "../utils";
+import { formatDate, formatMoney, getLocalDateStr, includesFixedExpenses, toLocalDateStr } from "../utils";
 import ExpensesSection from "./ExpensesSection";
 
 const inputClass =
@@ -92,6 +92,8 @@ const PAYMENT_ROWS = [
 function ReportPanel({ adminApi, employees }) {
   const [from, setFrom] = useState(getLocalDateStr());
   const [to, setTo] = useState(getLocalDateStr());
+  const [preset, setPreset] = useState("Bugün"); // seçili hazır aralık; tarih elle değişince null
+  const includeFixed = includesFixedExpenses(preset, from, to);
   const [selectedId, setSelectedId] = useState(null); // null = Toplam
   const [view, setView] = useState("summary"); // "summary" = Özet, "expenses" = Giderler
   const [report, setReport] = useState(null);
@@ -100,7 +102,7 @@ function ReportPanel({ adminApi, employees }) {
   const fetchReport = async () => {
     setLoading(true);
     try {
-      const response = await adminApi.get("/report", { params: { from, to } });
+      const response = await adminApi.get("/report", { params: { from, to, fixed: includeFixed ? 1 : 0 } });
       setReport(response.data);
     } catch (error) {
       alert(getErrorMessage(error, "Rapor yüklenemedi."));
@@ -112,14 +114,17 @@ function ReportPanel({ adminApi, employees }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (from && to) fetchReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to]);
+  }, [from, to, includeFixed]);
 
   // Mali müşavir için Excel (CSV). Şifre başlığı gerektiği için dosya axios ile indirilir.
   const [exporting, setExporting] = useState(false);
   const exportCsv = async () => {
     setExporting(true);
     try {
-      const response = await adminApi.get("/report/export", { params: { from, to }, responseType: "blob" });
+      const response = await adminApi.get("/report/export", {
+        params: { from, to, fixed: includeFixed ? 1 : 0 },
+        responseType: "blob",
+      });
       const url = URL.createObjectURL(response.data);
       const link = document.createElement("a");
       link.href = url;
@@ -164,9 +169,10 @@ function ReportPanel({ adminApi, employees }) {
               key={p.label}
               onClick={() => {
                 setFrom(p.from);
+                setPreset(p.label);
                 setTo(p.to);
               }}
-              className={chipClass(from === p.from && to === p.to)}
+              className={chipClass(preset === p.label)}
             >
               {p.label}
             </button>
@@ -174,9 +180,27 @@ function ReportPanel({ adminApi, employees }) {
         </div>
         <div className="flex flex-wrap items-center gap-1.5 text-sm text-neutral-300">
           <Calendar size={14} className="shrink-0" />
-          <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className={inputClass} />
+          <input
+            type="date"
+            value={from}
+            max={to}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              setPreset(null);
+            }}
+            className={inputClass}
+          />
           <span>—</span>
-          <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} className={inputClass} />
+          <input
+            type="date"
+            value={to}
+            min={from}
+            onChange={(e) => {
+              setTo(e.target.value);
+              setPreset(null);
+            }}
+            className={inputClass}
+          />
           <button
             onClick={exportCsv}
             disabled={exporting || !from || !to}
@@ -186,6 +210,11 @@ function ReportPanel({ adminApi, employees }) {
             <Download size={14} /> Excel
           </button>
         </div>
+        {!includeFixed && (
+          <p className="text-xs text-neutral-500">
+            Sabit aylık giderler (kira, maaş, stopaj vb.) günlük ve haftalık raporda düşülmez. Görmek için "Bu Ay"ı seçin.
+          </p>
+        )}
       </div>
 
       {/* GİDERLER görünümü */}

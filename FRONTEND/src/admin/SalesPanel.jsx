@@ -211,7 +211,8 @@ function SalesPanel({ adminApi, employees, services }) {
       const [salesRes, productsRes, reportRes] = await Promise.all([
         adminApi.get("/sales", { params: { date } }),
         adminApi.get("/products"),
-        adminApi.get("/report", { params: { from: date, to: date } }),
+        // Gün sonu: sabit aylık giderler (kira vb.) günlük hesaba katılmaz
+        adminApi.get("/report", { params: { from: date, to: date, fixed: 0 } }),
       ]);
       setSales(salesRes.data);
       setProducts(productsRes.data);

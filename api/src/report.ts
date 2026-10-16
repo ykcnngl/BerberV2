@@ -88,7 +88,9 @@ export function parseRange(fromParam: unknown, toParam: unknown) {
 }
 
 // Rapor ve dışa aktarmanın ortak verisi
-export async function loadPeriod(env: Env, from: string, to: string) {
+// includeFixed = false: sabit aylık giderlerden (kira, maaş, stopaj...) eklenen kayıtlar alınmaz. Bu giderler ayın
+// tek bir gününe yazıldığı için günlük/haftalık raporda düşülmez, yalnızca aylık raporda düşülür.
+export async function loadPeriod(env: Env, from: string, to: string, includeFixed = true) {
   await generateRecurringExpenses(env);
   // Saati gelmemiş randevular henüz yapılmadığı için rapora girmez
   const [appointments, sales, expenses, employees, settings] = await Promise.all([
@@ -100,7 +102,7 @@ export async function loadPeriod(env: Env, from: string, to: string) {
       nowLocal(),
     ),
     querySales(env, startOfDay(from), endOfDay(to)),
-    expenseRows(env, from, to),
+    expenseRows(env, from, to).then((rows) => (includeFixed ? rows : rows.filter((e) => e.recurring_id === null))),
     loadEmployees(env),
     getSettings(env),
   ]);
@@ -226,9 +228,9 @@ export function buildReport({ appointments, sales, expenses, employees, cardRate
   };
 }
 
-export async function getReport(env: Env, fromParam: unknown, toParam: unknown) {
+export async function getReport(env: Env, fromParam: unknown, toParam: unknown, includeFixed = true) {
   const { from, to } = parseRange(fromParam, toParam);
-  return { from, to, ...buildReport(await loadPeriod(env, from, to)) };
+  return { from, to, fixedExpensesIncluded: includeFixed, ...buildReport(await loadPeriod(env, from, to, includeFixed)) };
 }
 
 // --- EXCEL (CSV) DIŞA AKTARMA ---
@@ -247,9 +249,9 @@ const csvRow = (cells: (string | number | null)[]) => cells.map(csvCell).join(";
 const formatDate = (date: string) => date.slice(0, 10).split("-").reverse().join(".");
 const trNumber = (n: number) => String(n).replace(".", ",");
 
-export async function exportCsv(env: Env, fromParam: unknown, toParam: unknown) {
+export async function exportCsv(env: Env, fromParam: unknown, toParam: unknown, includeFixed = true) {
   const { from, to } = parseRange(fromParam, toParam);
-  const period = await loadPeriod(env, from, to);
+  const period = await loadPeriod(env, from, to, includeFixed);
   const report = buildReport(period);
   const employeeName = (id: string | null) => {
     const e = period.employees.find((x) => x.id === id);

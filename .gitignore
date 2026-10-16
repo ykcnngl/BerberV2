@@ -1,0 +1,21 @@
+# Bağımlılıklar ve derleme çıktıları
+node_modules/
+dist/
+target/
+.wrangler/
+
+# Gizli ayarlar (şablonlar hariç)
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# Yüklenen dosyalar
+uploads/
+
+# Editör / sistem
+.idea/
+.DS_Store
+*.log

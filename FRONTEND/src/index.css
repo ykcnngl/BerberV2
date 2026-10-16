@@ -1,0 +1,61 @@
+@import "tailwindcss";
+@import "@fontsource-variable/montserrat";
+@import "@fontsource/great-vibes";
+
+/* Marka kimliği (Instagram görsellerinden): siyah/antrasit zemin, bronz-şampanya vurgu,
+   geniş harf aralıklı Montserrat ve el yazısı vurgular için Great Vibes */
+@theme {
+  --font-sans: "Montserrat Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-script: "Great Vibes", cursive;
+
+  --color-bronze-200: #eadcc8;
+  --color-bronze-300: #d9c2a3;
+  --color-bronze-400: #c4a47c;
+  --color-bronze-500: #ad8a5f;
+  --color-bronze-600: #8c6d47;
+
+  --animate-marquee: marquee 40s linear infinite;
+  --animate-fade-up: fade-up 0.9s ease-out both;
+
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(24px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+  background: #0a0a0a;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Hareket hassasiyeti olan kullanıcılar için animasyonları kapat */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,0 +1,41 @@
+{
+  // Cloudflare Worker ayarları. Kurulum adımları için README.md'ye bakın.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ariftuzunalp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+
+  // Her gece 00:05 (Türkiye; UTC 21:05): sabit aylık giderler
+  "triggers": { "crons": ["5 21 * * *"] },
+
+  // Frontend (önce "npm --prefix ../FRONTEND run build"). /api ile başlayan adresler Worker'a,
+  // diğerleri siteye gider; bilinmeyen sayfalarda index.html döner (React Router).
+  "assets": {
+    "directory": "../FRONTEND/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "booking",
+      // "npx wrangler d1 create booking" komutunun verdiği database_id buraya yazılır
+      "database_id": "0346cf75-9135-4e16-8361-8d24ab44ff4b",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "r2_buckets": [{ "binding": "GALLERY", "bucket_name": "ariftuzunalp-gallery" }],
+
+  // Gizli olmayan ayarlar. Gizli olanlar (ADMIN_PASSWORD, NETGSM_USERCODE, NETGSM_PASSWORD)
+  // "npx wrangler secret put ADI" ile girilir, bu dosyaya yazılmaz.
+  "vars": {
+    "SMS_PROVIDER": "log",
+    "NETGSM_HEADER": "",
+    "BUSINESS_NAME": "Arif Tüzünalp",
+    "BUSINESS_PHONE": "0507 593 18 66"
+  }
+}

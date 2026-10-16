@@ -1,0 +1,5 @@
+# Yerel geliştirme için gizli değerler: bu dosyayı ".dev.vars" adıyla kopyalayıp doldurun (git'e eklenmez).
+# Canlıda bunlar "npx wrangler secret put ADI" ile girilir.
+ADMIN_PASSWORD=
+NETGSM_USERCODE=
+NETGSM_PASSWORD=

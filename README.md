@@ -96,7 +96,7 @@ V1 was a **Java Spring Boot** backend (still in the `booking/` folder for refere
 | 🔐 **Security** | SMS OTP, hashed session tokens, constant-time comparison, rate limiting, Worker secrets |
 | ⏰ **Automation** | Cloudflare Cron Triggers, `ctx.waitUntil` background tasks |
 | 🧪 **Testing & Tooling** | Vitest, ESLint, Wrangler |
-| 🕰️ **Legacy (V1)** | Java, Spring Boot, Spring Data JPA, Maven |
+| 🕰️ **Legacy (V1)** | Java, Spring Boot, Spring Data JPA, PostgreSQL, Maven |
 
 ## 🚀 Running Locally
 
